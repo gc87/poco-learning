@@ -1,0 +1,15 @@
+BasedOnStyle:                           Microsoft
+# Language:                               Cpp
+# IncludeBlocks:                          Preserve
+# Standard:                               Cpp17
+# Cpp11BracedListStyle:                   true
+# AlignConsecutiveAssignments: true
+# AlignConsecutiveDeclarations: true
+# NamespaceIndentation: All
+# BreakBeforeBinaryOperators: NonAssignment
+# AlignOperands: true
+# DerivePointerAlignment: false
+# PointerAlignment: Right
+# BinPackArguments: false
+# BinPackParameters: false
+# AllowShortFunctionsOnASingleLine: Empty
