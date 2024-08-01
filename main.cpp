@@ -5,6 +5,7 @@
 #include "Poco/DateTimeFormat.h"
 #include "Poco/DateTimeFormatter.h"
 #include "Poco/DateTimeParser.h"
+#include "Poco/Environment.h"
 #include "Poco/LocalDateTime.h"
 #include "Poco/Task.h"
 #include "Poco/TaskManager.h"
@@ -29,10 +30,12 @@ using Poco::Util::OptionCallback;
 using Poco::Util::OptionSet;
 using Poco::Util::ServerApplication;
 
+using Poco::Environment;
+
 class SampleTask : public Task
 {
   public:
-    SampleTask() : Task("SampleTask")
+    SampleTask() : Task{"SampleTask"}
     {
     }
 
@@ -51,7 +54,7 @@ class SampleTask : public Task
 class SampleServer : public ServerApplication
 {
   public:
-    SampleServer() : m_help_requested(false)
+    SampleServer() : mHelpRequested{false}
     {
     }
 
@@ -79,17 +82,17 @@ class SampleServer : public ServerApplication
         options.addOption(Option("help", "h", "display help information on command line arguments")
                               .required(false)
                               .repeatable(false)
-                              .callback(OptionCallback<SampleServer>(this, &SampleServer::HandleHelp)));
+                              .callback(OptionCallback<SampleServer>(this, &SampleServer::handleHelp)));
     }
 
-    void HandleHelp(const std::string &name, const std::string &value)
+    void handleHelp(const std::string &name, const std::string &value)
     {
-        m_help_requested = true;
-        DisplayHelp();
+        mHelpRequested = true;
+        displayHelp();
         stopOptionsProcessing();
     }
 
-    void DisplayHelp()
+    void displayHelp()
     {
         HelpFormatter helpFormatter(options());
         helpFormatter.setCommand(commandName());
@@ -101,8 +104,9 @@ class SampleServer : public ServerApplication
 
     int main(const ArgVec &args) override
     {
-        if (!m_help_requested)
+        if (!mHelpRequested)
         {
+            // 简单打印时间
             LocalDateTime now;
             std::string str = DateTimeFormatter::format(now, DateTimeFormat::ISO8601_FORMAT);
             std::cout << str << std::endl;
@@ -113,27 +117,72 @@ class SampleServer : public ServerApplication
             dt.makeUTC(tzd);
             LocalDateTime ldt(tzd, dt);
 
+            // 单例模式
             Application &app = Application::instance();
+            // 应用程序可执行文件的绝对路径
             app.logger().information("<application path>: " + app.config().getString("application.path"));
+            // 应用程序可执行文件的文件名
             app.logger().information("<application name>: " + app.config().getString("application.name"));
+            // 应用程序可执行文件的文件名（不包括扩展名
             app.logger().information("<application base name>: " + app.config().getString("application.baseName"));
+            // 应用程序可执行文件所在目录的路径
             app.logger().information("<application dir>: " + app.config().getString("application.dir"));
+            // 用户配置文件所在目录的路径，如果没有配置文件则为Roaming目录
             app.logger().information("<application config dir>: " + app.config().getString("application.configDir"));
+            // 用户指定的应用程序非必要数据文件存放目录的路径
             app.logger().information("<application cache dir>: " + app.config().getString("application.cacheDir"));
+            // 应用程序的用户特定数据文件存放目录的路径
             app.logger().information("<application data dir>: " + app.config().getString("application.dataDir"));
+            // 存放用户临时文件和应用程序其他文件对象的目录路径
             app.logger().information("<application temp dir>: " + app.config().getString("application.tempDir"));
 
+            // Environment
+            app.logger().information("<os name>: " + Environment::osName());
+            app.logger().information("<os display name>: " + Environment::osDisplayName());
+            app.logger().information("<os version>: " + Environment::osVersion());
+            app.logger().information("<os architecture>: " + Environment::osArchitecture());
+            app.logger().information("<node name>: " + Environment::nodeName());
+            app.logger().information("<node id>: " + Environment::nodeId());
+
+#if POCO_OS == POCO_OS_WINDOWS_NT
+            if (Environment::has("USERPROFILE"))
+            {
+                app.logger().information("<home>: " + Environment::get("USERPROFILE"));
+            }
+
+            if (Environment::has("USERNAME"))
+            {
+                app.logger().information("<user>: " + Environment::get("USERNAME"));
+            }
+#elif POCO_OS == POCO_OS_LINUX
+            if (Environment::has("HOME"))
+            {
+                app.logger().information("<home>: " + Environment::get("HOME"));
+            }
+
+            if (Environment::has("USER"))
+            {
+                app.logger().information("<user>: " + Environment::get("USER"));
+            }
+#endif
+
+            // 任务管理器中添加一个任务
             TaskManager tm;
             tm.start(new SampleTask);
+
+            // 等待终止请求 Ctrl+C
             waitForTerminationRequest();
+
+            // 取消所有任务
             tm.cancelAll();
             tm.joinAll();
         }
+
         return Application::EXIT_OK;
     }
 
   private:
-    bool m_help_requested;
+    bool mHelpRequested;
 };
 
 POCO_SERVER_MAIN(SampleServer)
