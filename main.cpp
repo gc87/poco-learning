@@ -7,6 +7,8 @@
 #include "Poco/DateTimeParser.h"
 #include "Poco/Environment.h"
 #include "Poco/LocalDateTime.h"
+#include "Poco/Notification.h"
+#include "Poco/NotificationQueue.h"
 #include "Poco/Task.h"
 #include "Poco/TaskManager.h"
 #include "Poco/Util/HelpFormatter.h"
@@ -21,6 +23,8 @@ using Poco::DateTimeParser;
 using Poco::LocalDateTime;
 
 using Poco::DateTimeFormatter;
+using Poco::Notification;
+using Poco::NotificationQueue;
 using Poco::Task;
 using Poco::TaskManager;
 using Poco::Util::Application;
@@ -31,6 +35,69 @@ using Poco::Util::OptionSet;
 using Poco::Util::ServerApplication;
 
 using Poco::Environment;
+
+class SampleNotification : public Notification
+{
+  public:
+    SampleNotification(const std::string &message) : _message(message)
+    {
+    }
+    const std::string &message() const
+    {
+        return _message;
+    }
+
+  private:
+    std::string _message;
+};
+
+class ProducerTask : public Task
+{
+  public:
+    ProducerTask(NotificationQueue &queue) : Task("ProducerTask"), _queue(queue)
+    {
+    }
+
+    void runTask() override
+    {
+        for (int i = 0; i < 10; ++i)
+        {
+            std::string message = "Message " + std::to_string(i);
+            _queue.enqueueNotification(new SampleNotification(message));
+            sleep(1000);
+        }
+    }
+
+  private:
+    NotificationQueue &_queue;
+};
+
+class ConsumerTask : public Task
+{
+  public:
+    ConsumerTask(NotificationQueue &queue) : Task("ConsumerTask"), _queue(queue)
+    {
+    }
+
+    void runTask() override
+    {
+        while (!isCancelled())
+        {
+            Poco::AutoPtr<Notification> pNf(_queue.waitDequeueNotification());
+            if (pNf)
+            {
+                SampleNotification *pSampleNf = dynamic_cast<SampleNotification *>(pNf.get());
+                if (pSampleNf)
+                {
+                    Application::instance().logger().information("Received: " + pSampleNf->message());
+                }
+            }
+        }
+    }
+
+  private:
+    NotificationQueue &_queue;
+};
 
 class SampleTask : public Task
 {
@@ -168,7 +235,11 @@ class SampleServer : public ServerApplication
 
             // 任务管理器中添加一个任务
             TaskManager tm;
-            tm.start(new SampleTask);
+            // tm.start(new SampleTask);
+
+            NotificationQueue queue;
+            tm.start(new ProducerTask(queue));
+            tm.start(new ConsumerTask(queue));
 
             // 等待终止请求 Ctrl+C
             waitForTerminationRequest();
