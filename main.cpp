@@ -83,7 +83,7 @@ class ConsumerTask : public Task
     {
         while (!isCancelled())
         {
-            Poco::AutoPtr<Notification> pNf(_queue.waitDequeueNotification());
+            Poco::AutoPtr<Notification> pNf(_queue.waitDequeueNotification(3000));
             if (pNf)
             {
                 SampleNotification *pSampleNf = dynamic_cast<SampleNotification *>(pNf.get());
