@@ -16,6 +16,10 @@
 #include "Poco/Util/OptionSet.h"
 #include "Poco/Util/ServerApplication.h"
 
+#include <Poco/Util/Option.h>
+#include <Poco/Util/OptionSet.h>
+#include <Poco/Util/Subsystem.h>
+
 using Poco::DateTime;
 using Poco::DateTimeFormat;
 using Poco::DateTimeFormatter;
@@ -33,6 +37,8 @@ using Poco::Util::Option;
 using Poco::Util::OptionCallback;
 using Poco::Util::OptionSet;
 using Poco::Util::ServerApplication;
+
+using Poco::Util::Subsystem;
 
 using Poco::Environment;
 
@@ -118,11 +124,54 @@ class SampleTask : public Task
     }
 };
 
+class MySubsystem : public Subsystem
+{
+  public:
+    MySubsystem() : _parameterValue("")
+    {
+    }
+
+    const char *name() const override
+    {
+        return "MySubsystem";
+    }
+
+    void initialize(Application &app) override
+    {
+        std::cout << "MySubsystem initialized with parameter: " << _parameterValue << std::endl;
+    }
+
+    void uninitialize() override
+    {
+        std::cout << "MySubsystem uninitialized" << std::endl;
+    }
+
+    void defineOptions(OptionSet &options) override
+    {
+        Subsystem::defineOptions(options);
+        options.addOption(Option("myparam", "p", "Set a parameter for MySubsystem")
+                              .required(false)
+                              .repeatable(false)
+                              .argument("value")
+                              .callback(OptionCallback<MySubsystem>(this, &MySubsystem::handleParameter)));
+    }
+
+    void handleParameter(const std::string &name, const std::string &value)
+    {
+        _parameterValue = value;
+        std::cout << "Parameter '" << name << "' set to: " << value << std::endl;
+    }
+
+  private:
+    std::string _parameterValue;
+};
+
 class SampleServer : public ServerApplication
 {
   public:
     SampleServer() : mHelpRequested{false}
     {
+        addSubsystem(new MySubsystem());
     }
 
     ~SampleServer()
@@ -132,15 +181,15 @@ class SampleServer : public ServerApplication
   protected:
     void initialize(Application &self) override
     {
+        logger().information("starting up");
         loadConfiguration(); // load default configuration files, if present
         ServerApplication::initialize(self);
-        logger().information("starting up");
     }
 
     void uninitialize() override
     {
-        logger().information("shutting down");
         ServerApplication::uninitialize();
+        logger().information("shutting down");
     }
 
     void defineOptions(OptionSet &options) override
@@ -150,6 +199,12 @@ class SampleServer : public ServerApplication
                               .required(false)
                               .repeatable(false)
                               .callback(OptionCallback<SampleServer>(this, &SampleServer::handleHelp)));
+
+        // options.addOption(Option("myparam", "p", "Set a parameter for MySubsystem")
+        //                       .required(false)
+        //                       .repeatable(false)
+        //                       .argument("value")
+        //                       .callback(OptionCallback<SampleServer>(this, &SampleServer::handleParameter)));
     }
 
     void handleHelp(const std::string &name, const std::string &value)
@@ -167,6 +222,11 @@ class SampleServer : public ServerApplication
         helpFormatter.setHeader(
             "A sample server application that demonstrates some of the features of the Util::ServerApplication class.");
         helpFormatter.format(std::cout);
+    }
+
+    void handleParameter(const std::string &name, const std::string &value)
+    {
+        std::cout << "Parameter '" << name << "' set to: " << value << std::endl;
     }
 
     int main(const ArgVec &args) override
@@ -242,7 +302,7 @@ class SampleServer : public ServerApplication
             tm.start(new ConsumerTask(queue));
 
             // 等待终止请求 Ctrl+C
-            waitForTerminationRequest();
+            // waitForTerminationRequest();
 
             // 取消所有任务
             tm.cancelAll();
