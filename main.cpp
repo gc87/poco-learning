@@ -16,9 +16,12 @@
 #include "Poco/Util/OptionSet.h"
 #include "Poco/Util/ServerApplication.h"
 
+#include <Poco/Thread.h>
 #include <Poco/Util/Option.h>
 #include <Poco/Util/OptionSet.h>
 #include <Poco/Util/Subsystem.h>
+
+#include <zmq.hpp>
 
 using Poco::DateTime;
 using Poco::DateTimeFormat;
@@ -38,6 +41,7 @@ using Poco::Util::OptionCallback;
 using Poco::Util::OptionSet;
 using Poco::Util::ServerApplication;
 
+using Poco::Thread;
 using Poco::Util::Subsystem;
 
 using Poco::Environment;
@@ -124,10 +128,55 @@ class SampleTask : public Task
     }
 };
 
+class MessageInterceptor
+{
+  public:
+    void intercept(const zmq::message_t &topic, const zmq::message_t &message)
+    {
+        std::cout << "Intercepted: [" << topic.to_string() << "] " << message.to_string() << std::endl;
+    }
+};
+
+class ZmqTask : public Task
+{
+  public:
+    ZmqTask() : Task{"ZmqTask"}, m_context(1), m_xsub(m_context, ZMQ_XSUB), m_xpub(m_context, ZMQ_XPUB), m_interceptor()
+    {
+        m_xsub.bind("tcp://*:5555");
+        m_xsub.set(zmq::sockopt::rcvtimeo, 1000);
+
+        m_xpub.bind("tcp://*:5556");
+    }
+
+    void runTask() override
+    {
+        Application &app = Application::instance();
+        app.logger().information("zmq task uptime: " + DateTimeFormatter::format(app.uptime()));
+
+        while (!isCancelled())
+        {
+            zmq::message_t topic_msg, message_msg;
+            m_xsub.recv(topic_msg, zmq::recv_flags::none);
+            m_xsub.recv(message_msg, zmq::recv_flags::none);
+
+            m_interceptor.intercept(topic_msg, message_msg);
+
+            m_xpub.send(topic_msg, zmq::send_flags::sndmore);
+            m_xpub.send(message_msg, zmq::send_flags::none);
+        }
+    }
+
+  private:
+    zmq::context_t m_context;
+    zmq::socket_t m_xsub;
+    zmq::socket_t m_xpub;
+    MessageInterceptor m_interceptor;
+};
+
 class MySubsystem : public Subsystem
 {
   public:
-    MySubsystem() : _parameterValue("")
+    MySubsystem(NotificationQueue *queue) : _parameterValue(""), m_zmqTask{}, m_thread{}
     {
     }
 
@@ -139,10 +188,13 @@ class MySubsystem : public Subsystem
     void initialize(Application &app) override
     {
         std::cout << "MySubsystem initialized with parameter: " << _parameterValue << std::endl;
+        m_thread.start(m_zmqTask);
     }
 
     void uninitialize() override
     {
+        m_zmqTask.cancel();
+        m_thread.join();
         std::cout << "MySubsystem uninitialized" << std::endl;
     }
 
@@ -164,14 +216,16 @@ class MySubsystem : public Subsystem
 
   private:
     std::string _parameterValue;
+    ZmqTask m_zmqTask;
+    Thread m_thread;
 };
 
 class SampleServer : public ServerApplication
 {
   public:
-    SampleServer() : mHelpRequested{false}
+    SampleServer() : mHelpRequested{false}, m_tm{}, m_queue{}
     {
-        addSubsystem(new MySubsystem());
+        addSubsystem(new MySubsystem(&m_queue));
     }
 
     ~SampleServer()
@@ -294,19 +348,15 @@ class SampleServer : public ServerApplication
 #endif
 
             // 任务管理器中添加一个任务
-            TaskManager tm;
-            // tm.start(new SampleTask);
-
-            NotificationQueue queue;
-            tm.start(new ProducerTask(queue));
-            tm.start(new ConsumerTask(queue));
+            m_tm.start(new ProducerTask(m_queue));
+            m_tm.start(new ConsumerTask(m_queue));
 
             // 等待终止请求 Ctrl+C
-            // waitForTerminationRequest();
+            waitForTerminationRequest();
 
             // 取消所有任务
-            tm.cancelAll();
-            tm.joinAll();
+            m_tm.cancelAll();
+            m_tm.joinAll();
         }
 
         return Application::EXIT_OK;
@@ -314,6 +364,8 @@ class SampleServer : public ServerApplication
 
   private:
     bool mHelpRequested;
+    TaskManager m_tm;
+    NotificationQueue m_queue;
 };
 
 POCO_SERVER_MAIN(SampleServer)
