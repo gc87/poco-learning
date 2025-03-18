@@ -43,9 +43,13 @@ if(cppzmq_FOUND)
     include_directories(${cppzmq_INCLUDE_DIR})
 endif()
 
+find_package(flatbuffers REQUIRED)
+
 add_executable(pocoex main.cpp)
 target_link_libraries(pocoex PRIVATE cppzmq-static)
 target_link_libraries(pocoex PRIVATE Poco::Foundation)
+
+target_link_directories(pocoex PRIVATE flatbuffers)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     file(COPY ${CMAKE_CURRENT_LIST_DIR}/pocoex.ini DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/Debug)

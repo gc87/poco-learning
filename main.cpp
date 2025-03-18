@@ -23,6 +23,9 @@
 
 #include <zmq.hpp>
 
+#include "monster_generated.h"
+#include <flatbuffers/flatbuffers.h>
+
 using Poco::DateTime;
 using Poco::DateTimeFormat;
 using Poco::DateTimeFormatter;
@@ -285,6 +288,36 @@ class SampleServer : public ServerApplication
 
     int main(const ArgVec &args) override
     {
+        // MyGame::MonsterT monster;
+        // monster.mana = 150;
+        // monster.hp = 100;
+        // monster.name = "Orc";
+
+        // flatbuffers::FlatBufferBuilder builder;
+        // builder.Finish(MyGame::Monster::Pack(builder, &monster));
+
+        // std::cout << "============>:" << builder.GetSize() << ", name:" << monster.name << std::endl;
+
+        flatbuffers::FlatBufferBuilder builder;
+
+        static const int32_t weapon_ids[] = {1, 2, 3, 4};
+
+        auto inventory = builder.CreateVector(weapon_ids, 4); // 创建向量
+
+        auto name = builder.CreateString("Orc");
+
+        MyGame::MonsterBuilder monster_builder(builder);
+
+        monster_builder.add_name(name);
+
+        auto monster = monster_builder.Finish();
+
+        builder.Finish(monster);
+
+        auto monster_data = flatbuffers::GetRoot<MyGame::Monster>(builder.GetBufferPointer());
+
+        std::cout << "Monster Name: " << monster_data->name()->c_str() << std::endl;
+
         if (!mHelpRequested)
         {
             // 简单打印时间
